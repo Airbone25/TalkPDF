@@ -1,0 +1,8 @@
+langchain
+langchain-community
+langchain-groq
+langchain-text-splitters
+langchain-postgres
+python-dotenv
+pypdf
+fastapi
