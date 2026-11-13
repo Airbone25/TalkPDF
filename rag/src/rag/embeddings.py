@@ -1,5 +1,5 @@
-from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_community.embeddings.fastembed import FastEmbedEmbeddings
 
 EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 
-embeddings = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL)
+embeddings = FastEmbedEmbeddings(model_name=EMBEDDING_MODEL)
