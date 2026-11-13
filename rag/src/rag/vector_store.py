@@ -3,8 +3,8 @@ import os
 from dotenv import find_dotenv, load_dotenv
 from langchain_postgres import PGVector
 from sqlalchemy import text
-from rag.embeddings import embeddings
 
+from rag.embeddings import embeddings
 from rag.load_docs import loadDocs
 
 load_dotenv(find_dotenv(usecwd=True))
@@ -30,29 +30,27 @@ vector_store = PGVector(
 )
 
 
-def _delete_source(name: str) -> None:
+def _delete_source(source_key: str) -> None:
     with vector_store.session_maker() as session:
         session.execute(
             text(
                 "DELETE FROM langchain_pg_embedding "
                 "WHERE collection_id = ("
                 "SELECT uuid FROM langchain_pg_collection WHERE name = :collection"
-                ") AND cmetadata->>'source' = :name"
+                ") AND cmetadata->>'source' = :source_key"
             ),
-            {"collection": COLLECTION_NAME, "name": name},
+            {"collection": COLLECTION_NAME, "source_key": source_key},
         )
         session.commit()
 
 
-def embedDocs(doc_names=None) -> dict[str, int]:
-    if doc_names is None:
-        doc_names = ["sample.pdf"]
+def embedDocs(doc_names, source_key=None) -> dict[str, int]:
     counts = {}
     for name in doc_names:
         docs = loadDocs(name)
         for doc in docs:
-            doc.metadata["source"] = name
-        _delete_source(name)
+            doc.metadata["source"] = source_key or name
+        _delete_source(source_key or name)
         vector_store.add_documents(docs)
         counts[name] = len(docs)
     return counts

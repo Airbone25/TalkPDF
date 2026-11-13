@@ -12,38 +12,67 @@ os.environ["GROQ_API_KEY"] = os.getenv("GROQ_API_KEY")
 
 model = init_chat_model("groq:qwen/qwen3.8-27b", reasoning_format="parsed")
 
-MAX_HISTORY_MESSAGES = 8
+SYSTEM_PROMPT = "You are a helpful assistant"
 
-base_messages = [
-    {"role": "system", "content": "You are a helpful assistant"},
-]
-
-
-def retrieve(query: str):
-    embed = embeddings.embed_query(query)
-    return vector_store.similarity_search_by_vector(embed, 10)
-
-
-def chat(query: str) -> str:
-    context = retrieve(query)
-    convo = base_messages + [
-        {
-            "role": "system",
-            "content": f"""
+RAG_PROMPT_TEMPLATE = """
                         You are a helpful assistant. You will be given a context of relevant information and a user question.
                         Your task is to answer the user's question based ONLY on the provided context.
                         If the answer is not in the context, you must say "I could not find the answer in the provided document."
                         Keep your answers clear, concise, and educational.
 
                         Context: {context}
-                        """,
-        },
-        {"role": "user", "content": query},
-    ]
-    response = model.invoke(convo)
-    base_messages.append({"role": "user", "content": query})
-    base_messages.append({"role": "assistant", "content": response.content})
-    excess = len(base_messages) - 1 - MAX_HISTORY_MESSAGES
-    if excess > 0:
-        del base_messages[1 : 1 + excess]
+                        """
+
+
+def _source_filter(sources):
+    if sources is None:
+        return None
+    if not sources:
+        return {"source": {"$in": ["__none__"]}}
+    return {"source": {"$in": list(sources)}}
+
+
+def _retrieve(query: str, sources=None) -> str:
+    embed = embeddings.embed_query(query)
+    context = vector_store.similarity_search_by_vector(
+        embed, 10, filter=_source_filter(sources)
+    )
+    return str(context)
+
+
+def _convo(query: str, history, sources=None) -> list[dict]:
+    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+    for entry in history or []:
+        role = entry.get("role")
+        content = entry.get("content")
+        if role in ("user", "assistant") and content:
+            messages.append({"role": role, "content": content})
+    messages.append(
+        {
+            "role": "system",
+            "content": RAG_PROMPT_TEMPLATE.format(context=_retrieve(query, sources)),
+        }
+    )
+    messages.append({"role": "user", "content": query})
+    return messages
+
+
+def _delta(chunk) -> str:
+    delta = chunk.content or ""
+    if isinstance(delta, list):
+        delta = "".join(
+            part.get("text", "") for part in delta if isinstance(part, dict)
+        )
+    return delta
+
+
+def chat_stream(query: str, history=None, sources=None):
+    for chunk in model.stream(_convo(query, history, sources)):
+        delta = _delta(chunk)
+        if delta:
+            yield delta
+
+
+def chat(query: str, history=None, sources=None) -> str:
+    response = model.invoke(_convo(query, history, sources))
     return response.content
